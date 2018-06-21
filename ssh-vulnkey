@@ -1,0 +1,110 @@
+#!/bin/bash
+#
+# seb-test-vul-ssh-host-re1.sh
+#
+# (C) 2008 Sebastian Spitzner; released under GNU GPL licence
+# Seb: 2008-05-15: started; version 20080515-1
+# notes:
+#   - this script tests whether a target SSH server is vulnerable to the major weak SSL key bug found in May 2008
+#   - this script only requires the presence of 'ssh-keyscan' and 'ssh-keygen' which come standard with openssh
+#   - this script is written in generic Bourne shell syntax so it should work on any UNIX-type system
+#   - the supplied fingerprint test file must contain fingerprint strings that are not colon-speperated
+#   - if you have several RSA or DSA fingerprint dictionary files, merge them together into one big input file first
+#   - if the report returns the lines "TEST_RESULT_RSA: pass" and "TEST_RESULT_DSA: pass", the host is not vulnerable
+#   - if the report returns the lines "TEST_RESULT_RSA: fail" or "TEST_RESULT_DSA: fail", the host is vulnerable
+
+HOST="${1}"
+FING_FILE="${2}"
+
+# syntax check
+if [ "${#}" != 2 ] ; then
+	BASENAME=`basename "${0}"`
+	{
+	echo "usage: ${BASENAME} <target_host> <fprint_file>"
+	echo
+	echo "  target_host: target host to test"
+	echo "  fprint_file: dictionary file containing vulnerable RSA or DSA fingerprints"
+	echo
+	} >&2
+	exit 1
+fi
+
+HOST_HAS_RSA=no
+HOST_HAS_DSA=no
+TEST_RESULT_RSA=pass
+TEST_RESULT_DSA=pass
+
+echo "Querying host '${HOST}' for RSA and DSA public keys..."
+
+PUBLIC_KEYS=`ssh-keyscan -t rsa,dsa "${HOST}"`
+
+if KEY_DATA_RSA=`echo "${PUBLIC_KEYS}" | grep ssh-rsa` ; then
+	HOST_HAS_RSA=yes
+fi
+
+if KEY_DATA_DSA=`echo "${PUBLIC_KEYS}" | grep ssh-dss` ; then
+	HOST_HAS_DSA=yes
+fi
+
+echo "HOST_HAS_RSA   : ${HOST_HAS_RSA}"
+echo "HOST_HAS_DSA   : ${HOST_HAS_DSA}"
+echo "KEY_DATA_DSA   : ${KEY_DATA_DSA}"
+echo "KEY_DATA_RSA   : ${KEY_DATA_RSA}"
+
+echo "${KEY_DATA_RSA}" > key-data-rsa.tmp
+echo "${KEY_DATA_DSA}" > key-data-dsa.tmp
+
+if [ "${HOST_HAS_RSA}" == "yes" ]; then
+	echo "Testing RSA public host key..."
+
+	DATA=`ssh-keygen -l -f key-data-rsa.tmp`
+	set -- ${DATA}
+	BITS_RSA="${1}"
+	FING_RSA="${2}"
+	FING_RSA_CLEAN=`echo "${FING_RSA}" | sed -e 's/://g'`
+
+	echo "DATA           : ${DATA}"
+	echo "BITS_RSA       : ${BITS_RSA}"
+	echo "FING_RSA       : ${FING_RSA}"
+	echo "FING_RSA_CLEAN : ${FING_RSA_CLEAN}"
+
+	if FING_MATCH_RSA=`grep "${FING_RSA_CLEAN}" "${FING_FILE}"` ; then
+		TEST_RESULT_RSA=fail
+		echo "[*] VULNERABLE key found!\n"
+		echo "Press Enter to continue\n"; read n
+	fi
+
+	echo "FING_MATCH_RSA : ${FING_MATCH_RSA}"
+	echo "TEST_RESULT_RSA: ${TEST_RESULT_RSA}"
+fi
+
+if [ "${HOST_HAS_DSA}" == "yes" ]; then
+	echo "Testing DSA public host key..."
+
+	DATA=`ssh-keygen -l -f key-data-dsa.tmp`
+	set -- ${DATA}
+	BITS_DSA="${1}"
+	FING_DSA="${2}"
+	FING_DSA_CLEAN=`echo "${FING_DSA}" | sed -e 's/://g'`
+
+	echo "DATA           : ${DATA}"
+	echo "BITS_DSA       : ${BITS_DSA}"
+	echo "FING_DSA       : ${FING_DSA}"
+	echo "FING_DSA_CLEAN : ${FING_DSA_CLEAN}"
+
+	if FING_MATCH_DSA=`grep "${FING_DSA_CLEAN}" "${FING_FILE}"` ; then
+		TEST_RESULT_DSA=fail
+		echo "[*] VULNERABLE key found!\n"
+		echo "Press Enter to continue\n"; read n
+	fi
+
+	echo "FING_MATCH_DSA : ${FING_MATCH_DSA}"
+	echo "TEST_RESULT_DSA: ${TEST_RESULT_DSA}"
+fi
+
+# clean up
+rm -f key-data-rsa.tmp key-data-dsa.tmp
+
+echo "Done"
+
+exit 0
